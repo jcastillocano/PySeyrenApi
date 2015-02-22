@@ -4,6 +4,7 @@ import json
 import requests
 import cerberus
 from urllib import urlencode
+from functools import partial
 
 VERSION = '0.0.1'
 
@@ -19,34 +20,55 @@ class SeyrenAlertException(SeyrenException):
 class SeyrenCheckException(SeyrenException):
     pass
 
-class SeyrenSubscription(object):
-    validation_schema = {'target': {'type': 'string'},
-                         'type': {'type': 'string'},
-                         'ignoreWarn': {'type': 'boolean'},
-                         'ignoreError': {'type': 'boolean'},
-                         'ignoreOk': {'type': 'boolean'},
-                         'notifyOnWarn': {'type': 'boolean'},
-                         'notifyOnError': {'type': 'boolean'},
-                         'notifyOnOk': {'type': 'boolean'},
-                         'fromTime': {'type': 'string', 'default': '0000', 'regex': '[0-9]{4}'},
-                         'toTime': {'type': 'string', 'default': '2359', 'regex': '[0-9]{4}'},
-                         'su': {'type': 'boolean'},
-                         'mo': {'type': 'boolean'},
-                         'tu': {'type': 'boolean'},
-                         'we': {'type': 'boolean'},
-                         'th': {'type': 'boolean'},
-                         'fr': {'type': 'boolean'},
-                         'sa': {'type': 'boolean'},
-                         'enabled': {'type': 'boolean'}}
-    def __init__(self, subscription_params):
-        validator = Validator(self.validation_schema)
-        if not validator(subscription_params):
-            raise SeyrenSubscriptionDataValidationError("Failed to validate subscription data: {}".format(self.validator.errors))
-        self._data = {}
-        for key in self.validation_schema.keys():
-            self._data[key] = subscription_params[key]
-            setattr(self, key, self._data[key])
+class SeyrenDataValidationError(SeyrenException):
+    pass
 
+
+class SeyrenSubscription(object):
+    _validation_schema = {'target': {'type': 'string'},
+                          'type': {'type': 'string'},
+                          'ignoreWarn': {'type': 'boolean'},
+                          'ignoreError': {'type': 'boolean'},
+                          'ignoreOk': {'type': 'boolean'},
+                          'notifyOnWarn': {'type': 'boolean'},
+                          'notifyOnError': {'type': 'boolean'},
+                          'notifyOnOk': {'type': 'boolean'},
+                          'fromTime': {'type': 'string', 'regex': '(2[0-4]|[0-1][0-9])[0-5][0-9]'},
+                          'toTime': {'type': 'string', 'regex': '(2[0-4]|[0-1][0-9])[0-5][0-9]'},
+                          'su': {'type': 'boolean'},
+                          'mo': {'type': 'boolean'},
+                          'tu': {'type': 'boolean'},
+                          'we': {'type': 'boolean'},
+                          'th': {'type': 'boolean'},
+                          'fr': {'type': 'boolean'},
+                          'sa': {'type': 'boolean'},
+                          'enabled': {'type': 'boolean'}}
+
+    @staticmethod
+    def _setter(self, value, key):
+        if self._validator({key: value}, {key: self._validation_schema[key]}):
+           self._data[key] = value 
+        else:
+           raise SeyrenDataValidationError("Failed to validate value: {}".format(self._validator.errors))
+
+    @staticmethod
+    def _getter(self, key):
+        return self._data.get(key, None)
+
+    @staticmethod
+    def _deleter(self, key):
+        self._data[key] = None
+
+    def __init__(self, subscription_params):
+        self._validator = cerberus.Validator()
+        if not self._validator(subscription_params, self._validation_schema):
+            raise SeyrenDataValidationError("Failed to validate subscription data: {}".format(self.validator.errors))
+        self._data = {}
+        for key in self._validation_schema.keys():
+            self._data[key] = subscription_params.get(key, None)
+            setattr(SeyrenSubscription, key, property(partial(self._getter, key=key),
+                                                      partial(self._setter, key=key),
+                                                      partial(self._deleter, key=key)))
 
 
 class SeyrenCheck(object):

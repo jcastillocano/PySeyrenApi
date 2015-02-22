@@ -30,3 +30,24 @@ def test_get_alerts(seyren_client):
     alert_ids = [alert.id for alert in alerts]
     assert len(set(alert_ids)) == 83
 
+
+def test_subscription_argument_validation():
+    sub = seyren.SeyrenSubscription({})
+
+    # Not set values are None
+    assert sub.enabled == None
+
+    # Setting incorrect value raises
+    with pytest.raises(seyren.SeyrenDataValidationError):
+        sub.enabled = "True"
+
+    # Setting/getting works
+    sub.enabled = True
+    assert sub.enabled == True
+    sub.enabled = False
+    assert sub.enabled == False
+
+    # Deletion resets the value to None
+    del sub.enabled
+    assert sub.enabled == None
+
