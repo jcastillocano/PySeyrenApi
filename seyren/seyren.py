@@ -2,6 +2,7 @@ __author__ = 'ndenev@gmail.com'
 
 import json
 import requests
+import cerberus
 from urllib import urlencode
 
 VERSION = '0.0.1'
@@ -17,6 +18,35 @@ class SeyrenAlertException(SeyrenException):
 
 class SeyrenCheckException(SeyrenException):
     pass
+
+class SeyrenSubscription(object):
+    validation_schema = {'target': {'type': 'string'},
+                         'type': {'type': 'string'},
+                         'ignoreWarn': {'type': 'boolean'},
+                         'ignoreError': {'type': 'boolean'},
+                         'ignoreOk': {'type': 'boolean'},
+                         'notifyOnWarn': {'type': 'boolean'},
+                         'notifyOnError': {'type': 'boolean'},
+                         'notifyOnOk': {'type': 'boolean'},
+                         'fromTime': {'type': 'string', 'default': '0000', 'regex': '[0-9]{4}'},
+                         'toTime': {'type': 'string', 'default': '2359', 'regex': '[0-9]{4}'},
+                         'su': {'type': 'boolean'},
+                         'mo': {'type': 'boolean'},
+                         'tu': {'type': 'boolean'},
+                         'we': {'type': 'boolean'},
+                         'th': {'type': 'boolean'},
+                         'fr': {'type': 'boolean'},
+                         'sa': {'type': 'boolean'},
+                         'enabled': {'type': 'boolean'}}
+    def __init__(self, subscription_params):
+        validator = Validator(self.validation_schema)
+        if not validator(subscription_params):
+            raise SeyrenSubscriptionDataValidationError("Failed to validate subscription data: {}".format(self.validator.errors))
+        self._data = {}
+        for key in self.validation_schema.keys():
+            self._data[key] = subscription_params[key]
+            setattr(self, key, self._data[key])
+
 
 
 class SeyrenCheck(object):
@@ -123,7 +153,7 @@ class SeyrenClient(object):
         if auth is not None:
             self._session.auth = auth
 
-    def _api_call(self, method, url, params):
+    def _api_call(self, method, url, params=None):
         ''' Make a call to the API
         :param method: Requests recognized HTTP method.
         :type method: string
@@ -138,6 +168,17 @@ class SeyrenClient(object):
         resp = self._session.send(preq)
         resp.raise_for_status()
         return resp.json()
+
+    def get_metric_count(self, path):
+        ''' Get the number of metrics that match the given path
+        :param path: metric path e.g.: host.path.metric.xxx
+        :type path: string
+        :returns: number of matching metrics
+        :rtype: int
+        '''
+        query_url = '{}/api/metrics/{}/total'.format(self._url, path)
+        response = self._api_call('GET', query_url)
+        return int(response[path])
 
     def get_alerts(self, start=0, items=20):
         alerts = []

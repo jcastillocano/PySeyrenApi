@@ -26,7 +26,7 @@ setup(
     license='BSD',
     author='Nikolay Denev',
     author_email='ndenev@gmail.com',
-    install_requires=['requests'],
+    install_requires=['requests', 'cerberus'],
     tests_require=['pytest', 'pytest-cov'],
     #test_suite="tests",
     cmdclass = {'test': PyTest},

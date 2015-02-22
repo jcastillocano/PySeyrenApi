@@ -7,16 +7,21 @@ import pytest
 import seyren
 import json
 
-
-def test_create_client():
+@pytest.fixture
+def seyren_client():
     sc = seyren.SeyrenClient(url='http://seyren.home.lan:8081')
     assert sc is not None
+    return sc
 
 @pytest.mark.integration
-def test_get_alerts():
-    sc = seyren.SeyrenClient(url='http://seyren.home.lan:8081')
+def test_get_metric_count(seyren_client):
+    metric_count = seyren_client.get_metric_count('nas.cpu.*')
+    assert metric_count == 14
 
-    alerts = sc.get_alerts()
+@pytest.mark.integration
+def test_get_alerts(seyren_client):
+
+    alerts = seyren_client.get_alerts()
 
     for alert in alerts:
         assert isinstance(alert, seyren.SeyrenAlert)
