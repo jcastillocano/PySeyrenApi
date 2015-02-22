@@ -21,7 +21,7 @@ class SeyrenCheckException(SeyrenException):
 
 class SeyrenCheck(object):
     def __init__(self):
-        _alert_fields = ['checkId',
+        _check_fields = ['checkId',
                          'fromType',
                          'toType',
                          'target',
@@ -32,6 +32,54 @@ class SeyrenCheck(object):
                          'targetHash',
                          'id']
         pass
+
+    def get_alerts(self):
+        ''' Get alerts for this check '''
+        pass
+
+    def delete_alerts(self, before):
+        ''' Delete alerts for this check before the specified date
+        :param before: the date before to delete alerts
+        :param type: datetime
+        :returns: Nothing on success, or throws exception
+        :rtype: None
+        :raises: SeyrenAlertException
+        '''
+        pass
+
+    def create(self, check):
+        '''
+        Parameter	Required	Description	                Type
+        name	        true	        Name of the check	        String
+        description	false	        Description of the check	String
+        target	        true	        Name of the metric in graphite	String
+        warn	        true	        Warn level	                String
+        error	        true	        Error level	                String
+        enabled	        true	        Enable/Disable value	        boolean
+        live	        false	        Live value (pickle protocol)	boolean
+        from	        false	        Specifies the beginning	        String
+        until	        false	        Specifies the end	        String
+        '''
+        pass
+
+    def update(self):
+        pass
+
+    def delete(self):
+        pass
+
+    def create_subscription(self):
+        pass
+
+    def update_subscription(self):
+        pass
+
+    def delete_subscription(self):
+        pass
+
+    def test_subscription(self, subscription):
+        pass
+    
 
 class SeyrenAlert(object):
     _alert_fields = ['checkId',
@@ -103,4 +151,21 @@ class SeyrenClient(object):
             alerts.extend([SeyrenAlert(alert) for alert in alert_data['values']])
         return alerts
 
+    def get_checks(self, **kwargs):
+        ''' Get all configured checks
+        Optional kwargs:
+        state
+        enabled
+        name
+        fields
+        regexes
+        '''
+        pass
+
+    def get_check(self, checkId):
+        pass
+
+
+    def get_chart_for_target(self, target):
+        pass
 
