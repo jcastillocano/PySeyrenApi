@@ -20,11 +20,33 @@ class SeyrenAlertException(SeyrenException):
 class SeyrenCheckException(SeyrenException):
     pass
 
+
 class SeyrenDataValidationError(SeyrenException):
     pass
 
 
+def _setter(obj, value, key):
+    if obj._validator({key: value}, {key: obj._validation_schema[key]}):
+       obj._data[key] = value 
+    else:
+       raise SeyrenDataValidationError("Failed to validate value: {}".format(obj._validator.errors))
+
+def _getter(obj, key):
+    return obj._data.get(key, None)
+
+def _deleter(obj, key):
+    obj._data[key] = None
+
+def _gen_props(obj, params):
+    if not obj._validator(params, obj._validation_schema):
+        raise SeyrenDataValidationError("Failed to validate data: {}".format(obj._validator.errors))
+    for key in obj._validation_schema.keys():
+        obj._data[key] = params.get(key, None)
+        setattr(obj.__class__, key, property(partial(_getter, key=key), partial(_setter, key=key), partial(_deleter, key=key)))
+
+
 class SeyrenSubscription(object):
+    _validator = cerberus.Validator()
     _validation_schema = {'target': {'type': 'string'},
                           'type': {'type': 'string'},
                           'ignoreWarn': {'type': 'boolean'},
@@ -44,46 +66,28 @@ class SeyrenSubscription(object):
                           'sa': {'type': 'boolean'},
                           'enabled': {'type': 'boolean'}}
 
-    @staticmethod
-    def _setter(self, value, key):
-        if self._validator({key: value}, {key: self._validation_schema[key]}):
-           self._data[key] = value 
-        else:
-           raise SeyrenDataValidationError("Failed to validate value: {}".format(self._validator.errors))
-
-    @staticmethod
-    def _getter(self, key):
-        return self._data.get(key, None)
-
-    @staticmethod
-    def _deleter(self, key):
-        self._data[key] = None
-
     def __init__(self, subscription_params):
-        self._validator = cerberus.Validator()
-        if not self._validator(subscription_params, self._validation_schema):
-            raise SeyrenDataValidationError("Failed to validate subscription data: {}".format(self.validator.errors))
         self._data = {}
-        for key in self._validation_schema.keys():
-            self._data[key] = subscription_params.get(key, None)
-            setattr(SeyrenSubscription, key, property(partial(self._getter, key=key),
-                                                      partial(self._setter, key=key),
-                                                      partial(self._deleter, key=key)))
+        _gen_props(self, subscription_params)
 
 
 class SeyrenCheck(object):
-    def __init__(self):
-        _check_fields = ['checkId',
-                         'fromType',
-                         'toType',
-                         'target',
-                         'timestamp',
-                         'value',
-                         'warn',
-                         'error',
-                         'targetHash',
-                         'id']
-        pass
+    _validator = cerberus.Validator()
+    _validation_schema = {'checkId': {'type': 'string', 'regex': '[0-9a-f]+' },
+                          'fromType': {'type': 'string' },
+                          'toType': {'type': 'string' },
+                          'target': {'type': 'string' },
+                          'timestamp': {'type': 'integer' },
+                          'value': {'type': 'number' },
+                          'warn': {'type': 'string' },
+                          'error': {'type': 'string' },
+                          'targetHash': {'type': 'string' },
+                          'id': {'type': 'string', 'regex': '[0-9a-f]+' }}
+
+    def __init__(self, check_params):
+        self._data = {}
+        _gen_props(self, check_params)
+
 
     def get_alerts(self):
         ''' Get alerts for this check '''

@@ -51,3 +51,13 @@ def test_subscription_argument_validation():
     del sub.enabled
     assert sub.enabled == None
 
+def test_check_data_validation():
+
+    with pytest.raises(seyren.SeyrenDataValidationError):
+        seyren.SeyrenCheck({'checkId': 'zzz'})
+
+    check = seyren.SeyrenCheck({})
+
+    assert check.checkId == None
+    check.checkId = "deadbeef"
+    assert check.checkId == "deadbeef"
