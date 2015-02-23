@@ -64,11 +64,20 @@ class SeyrenSubscription(object):
                           'th': {'type': 'boolean'},
                           'fr': {'type': 'boolean'},
                           'sa': {'type': 'boolean'},
-                          'enabled': {'type': 'boolean'}}
+                          'enabled': {'type': 'boolean'},
+                          'id': {'type': 'string', 'regex': '[0-9a-f]+' }}
+
 
     def __init__(self, subscription_params):
         self._data = {}
         _gen_props(self, subscription_params)
+
+    def __repr__(self):
+        return "<SeyrenSubscription: {}>".format(hash(frozenset(self._data.items())))
+
+    def __str__(self):
+        return "{}".format({k:self._data[k] for k in self._validation_schema.keys()})
+
 
 
 class SeyrenCheck(object):
@@ -82,12 +91,22 @@ class SeyrenCheck(object):
                           'warn': {'type': 'string' },
                           'error': {'type': 'string' },
                           'targetHash': {'type': 'string' },
-                          'id': {'type': 'string', 'regex': '[0-9a-f]+' }}
+                          'id': {'type': 'string', 'regex': '[0-9a-f]+' },
+                          'from': {'type': 'string', 'nullable': True},
+                          'until': {'type': 'string', 'nullable': True},
+                          'description': {'type': 'string', 'nullable': True},
+                          'enabled': {'type': 'boolean'},
+                          'live': {'type': 'boolean'},
+                          'lastCheck': {'type': 'integer'},
+                          'state': {'type': 'string'},
+                          'name': {'type': 'string'}}
 
     def __init__(self, check_params):
         self._data = {}
         _gen_props(self, check_params)
 
+    def __repr__(self):
+        return "<SeyrenCheck: {}:{}:{}>".format(self._data['id'], self._data['checkId'], self._data['name'])
 
     def get_alerts(self):
         ''' Get alerts for this check '''
@@ -124,7 +143,7 @@ class SeyrenCheck(object):
     def delete(self):
         pass
 
-    def create_subscription(self):
+    def create_subscription(self, subscription):
         pass
 
     def update_subscription(self):
@@ -218,7 +237,7 @@ class SeyrenClient(object):
             alerts.extend([SeyrenAlert(alert) for alert in alert_data['values']])
         return alerts
 
-    def get_checks(self, **kwargs):
+    def get_checks(self, state=None, enabled=None, name=None, fields=None, regexes=None):
         ''' Get all configured checks
         Optional kwargs:
         state
@@ -227,7 +246,14 @@ class SeyrenClient(object):
         fields
         regexes
         '''
-        pass
+        params = {}
+        checks = []
+        checks_data = self._api_call('GET', self._url + '/api/checks', params=urlencode(params))
+        for check_data in checks_data['values']:
+            subscriptions = [SeyrenSubscription(sub_data) for sub_data in check_data['subscriptions'] if 'subscriptions' in check_data]
+            del check_data['subscriptions']
+            checks.append(SeyrenCheck(check_data))
+        return checks
 
     def get_check(self, checkId):
         pass
