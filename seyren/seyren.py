@@ -3,6 +3,7 @@ __author__ = 'ndenev@gmail.com'
 import json
 import requests
 import cerberus
+from abc import ABCMeta, abstractmethod
 from urllib import urlencode
 from functools import partial
 
@@ -25,28 +26,47 @@ class SeyrenDataValidationError(SeyrenException):
     pass
 
 
-def _setter(obj, value, key):
-    if obj._validator({key: value}, {key: obj._validation_schema[key]}):
-       obj._data[key] = value 
-    else:
-       raise SeyrenDataValidationError("Failed to validate value: {}".format(obj._validator.errors))
-
-def _getter(obj, key):
-    return obj._data.get(key, None)
-
-def _deleter(obj, key):
-    obj._data[key] = None
-
-def _gen_props(obj, params):
-    if not obj._validator(params, obj._validation_schema):
-        raise SeyrenDataValidationError("Failed to validate data: {}".format(obj._validator.errors))
-    for key in obj._validation_schema.keys():
-        obj._data[key] = params.get(key, None)
-        setattr(obj.__class__, key, property(partial(_getter, key=key), partial(_setter, key=key), partial(_deleter, key=key)))
-
-
-class SeyrenSubscription(object):
+class SeyrenBaseObject:
+    __metaclass__ = ABCMeta
     _validator = cerberus.Validator()
+    
+    def __init__(self, params):
+        self._data = {}
+        self._gen_props(params)
+
+    def _setter(self, key, value):
+        if self._validator({key: value}, {key: self._validation_schema[key]}):
+           self._data[key] = value 
+        else:
+           raise SeyrenDataValidationError("Failed to validate value: {}".format(self._validator.errors))
+
+    def _getter(self, key):
+        return self._data.get(key, None)
+
+    def _deleter(self, key):
+        self._data[key] = None
+
+    def _add_prop(self, key, value):
+        getx = lambda self: self._getter(key)
+        setx = lambda self, value: self._setter(key, value)
+        delx = lambda self: self._deleter(key)
+        setattr(self.__class__, key, property(getx, setx, delx))
+
+    def _gen_props(self, params):
+        if not self._validator(params, self._validation_schema):
+            raise SeyrenDataValidationError("Failed to validate data: {}".format(self._validator.errors))
+        for k, v in map(lambda k: (k, params.get(k, None)), self._validation_schema.keys()):
+            self._data[k] = v
+            self._add_prop(k, v)
+
+    def __repr__(self):
+        return "<{}: {}>".format(self.__class__, hash(frozenset(self._data.items())))
+
+    def __str__(self):
+        return "{}".format({k: self._data[k] for k in self._validation_schema.keys()})
+
+
+class SeyrenSubscription(SeyrenBaseObject):
     _validation_schema = {'target': {'type': 'string'},
                           'type': {'type': 'string'},
                           'ignoreWarn': {'type': 'boolean'},
@@ -66,22 +86,10 @@ class SeyrenSubscription(object):
                           'sa': {'type': 'boolean'},
                           'enabled': {'type': 'boolean'},
                           'id': {'type': 'string', 'regex': '[0-9a-f]+' }}
+    def __init__(self, params):
+        super(SeyrenSubscription, self).__init__(params)
 
-
-    def __init__(self, subscription_params):
-        self._data = {}
-        _gen_props(self, subscription_params)
-
-    def __repr__(self):
-        return "<SeyrenSubscription: {}>".format(hash(frozenset(self._data.items())))
-
-    def __str__(self):
-        return "{}".format({k:self._data[k] for k in self._validation_schema.keys()})
-
-
-
-class SeyrenCheck(object):
-    _validator = cerberus.Validator()
+class SeyrenCheck(SeyrenBaseObject):
     _validation_schema = {'checkId': {'type': 'string', 'regex': '[0-9a-f]+' },
                           'fromType': {'type': 'string' },
                           'toType': {'type': 'string' },
@@ -100,13 +108,8 @@ class SeyrenCheck(object):
                           'lastCheck': {'type': 'integer'},
                           'state': {'type': 'string'},
                           'name': {'type': 'string'}}
-
-    def __init__(self, check_params):
-        self._data = {}
-        _gen_props(self, check_params)
-
-    def __repr__(self):
-        return "<SeyrenCheck: {}:{}:{}>".format(self._data['id'], self._data['checkId'], self._data['name'])
+    def __init__(self, params):
+        super(SeyrenCheck, self).__init__(params)
 
     def get_alerts(self):
         ''' Get alerts for this check '''
@@ -156,7 +159,8 @@ class SeyrenCheck(object):
         pass
     
 
-class SeyrenAlert(object):
+class SeyrenAlert(SeyrenBaseObject):
+    '''
     _alert_fields = ['checkId',
                      'fromType',
                      'toType',
@@ -167,18 +171,28 @@ class SeyrenAlert(object):
                      'error',
                      'targetHash',
                      'id']
+     '''
+    _validation_schema = {'checkId': {'type': 'string', 'regex': '[0-9a-f]+' },
+                          'fromType': {'type': 'string' },
+                          'toType': {'type': 'string' },
+                          'target': {'type': 'string' },
+                          'timestamp': {'type': 'integer' },
+                          'value': {'type': 'number' },
+                          'warn': {'type': 'number' },
+                          'error': {'type': 'number' },
+                          'targetHash': {'type': 'string' },
+                          'id': {'type': 'string', 'regex': '[0-9a-f]+' },
+                          'from': {'type': 'string', 'nullable': True},
+                          'until': {'type': 'string', 'nullable': True},
+                          'description': {'type': 'string', 'nullable': True},
+                          'enabled': {'type': 'boolean'},
+                          'live': {'type': 'boolean'},
+                          'lastCheck': {'type': 'integer'},
+                          'state': {'type': 'string'},
+                          'name': {'type': 'string'}}
 
-    def __init__(self, alert):
-        for field in self._alert_fields:
-            if field not in alert:
-                raise SeyrenAlertException('Missing required field: {}'.format(field))
-            setattr(self, field, alert[field])
-
-    def __repr__(self):
-        return "SeyrenAlert(id: {}, checkId: {}, target: {}, change: {}->{})".format(self.id, self.checkId, self.target, self.fromType, self.toType)
-
-    def __str__(self):
-        return self.__repr__()
+    def __init__(self, params):
+        super(SeyrenAlert, self).__init__(params)
 
 
 class SeyrenClient(object):
@@ -192,7 +206,7 @@ class SeyrenClient(object):
         :rtype: SeyrenClient
         '''
 
-        self._url = url
+        self._url = url.rstrip('/')
         self._session = requests.Session()
         self._session.headers = headers = {'User-Agent': 'PySeyrenClient-{}'.format(VERSION)}
         if auth is not None:
@@ -238,8 +252,8 @@ class SeyrenClient(object):
         return alerts
 
     def get_checks(self, state=None, enabled=None, name=None, fields=None, regexes=None):
-        ''' Get all configured checks
-        Optional kwargs:
+        ''' Gets all configured checks
+        :param state: State of the check
         state
         enabled
         name

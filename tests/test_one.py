@@ -26,9 +26,9 @@ def test_get_alerts(seyren_client):
     for alert in alerts:
         assert isinstance(alert, seyren.SeyrenAlert)
 
-    assert len(alerts) == 83
+    assert len(alerts) == 90 
     alert_ids = [alert.id for alert in alerts]
-    assert len(set(alert_ids)) == 83
+    assert len(set(alert_ids)) == 90
 
 
 def test_subscription_argument_validation():
