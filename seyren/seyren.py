@@ -27,18 +27,21 @@ class SeyrenDataValidationError(SeyrenException):
 
 
 class SeyrenBaseObject:
+    ''' Default Seyren object class '''
     __metaclass__ = ABCMeta
     _validator = cerberus.Validator()
-    
+    _validation_schema = {}
+
     def __init__(self, params):
         self._data = {}
         self._gen_props(params)
 
     def _setter(self, key, value):
         if self._validator({key: value}, {key: self._validation_schema[key]}):
-           self._data[key] = value 
+            self._data[key] = value
         else:
-           raise SeyrenDataValidationError("Failed to validate value: {}".format(self._validator.errors))
+            _msg = "Failed to validate value: {}".format(self._validator.errors)
+            raise SeyrenDataValidationError(_msg)
 
     def _getter(self, key):
         return self._data.get(key, None)
@@ -105,11 +108,16 @@ class SeyrenCheck(SeyrenBaseObject):
                           'description': {'type': 'string', 'nullable': True},
                           'enabled': {'type': 'boolean'},
                           'live': {'type': 'boolean'},
-                          'lastCheck': {'type': 'integer'},
+                          'lastCheck': {'type': 'integer', 'nullable': True},
                           'state': {'type': 'string'},
-                          'name': {'type': 'string'}}
-    def __init__(self, params):
+                          'name': {'type': 'string'},
+                          'allowNoData': {'type': 'boolean'}}
+    _create_fields = ['name', 'description', 'target', 'warn', 'error', 'enabled',
+                      'live', 'from', 'until']
+
+    def __init__(self, params, subscriptions = []):
         super(SeyrenCheck, self).__init__(params)
+        self.subscriptions = subscriptions
 
     def get_alerts(self):
         ''' Get alerts for this check '''
@@ -125,26 +133,18 @@ class SeyrenCheck(SeyrenBaseObject):
         '''
         pass
 
-    def create(self, check):
-        '''
-        Parameter	Required	Description	                Type
-        name	        true	        Name of the check	        String
-        description	false	        Description of the check	String
-        target	        true	        Name of the metric in graphite	String
-        warn	        true	        Warn level	                String
-        error	        true	        Error level	                String
-        enabled	        true	        Enable/Disable value	        boolean
-        live	        false	        Live value (pickle protocol)	boolean
-        from	        false	        Specifies the beginning	        String
-        until	        false	        Specifies the end	        String
-        '''
-        pass
-
-    def update(self):
-        pass
-
-    def delete(self):
-        pass
+    def post_data(self):
+        ''' Create body dict for creating checks '''
+        _data = {}
+        for _key in self._create_fields:
+            _attr = getattr(self, _key, None)
+            if _attr is None:
+                continue
+            if isinstance(_attr, bool):
+                _attr = str(_attr).lower()
+            _data[_key] = str(_attr)
+        print 'Data to send:', _data
+        return _data
 
     def create_subscription(self, subscription):
         pass
@@ -157,7 +157,6 @@ class SeyrenCheck(SeyrenBaseObject):
 
     def test_subscription(self, subscription):
         pass
-    
 
 class SeyrenAlert(SeyrenBaseObject):
     '''
@@ -208,11 +207,11 @@ class SeyrenClient(object):
 
         self._url = url.rstrip('/')
         self._session = requests.Session()
-        self._session.headers = headers = {'User-Agent': 'PySeyrenClient-{}'.format(VERSION)}
+        self._session.headers = {'User-Agent': 'PySeyrenClient-{}'.format(VERSION)}
         if auth is not None:
             self._session.auth = auth
 
-    def _api_call(self, method, url, params=None):
+    def _api_call(self, method, url, params=None, data=None, headers=None):
         ''' Make a call to the API
         :param method: Requests recognized HTTP method.
         :type method: string
@@ -221,12 +220,24 @@ class SeyrenClient(object):
         :param params: Parameters to pass with the HTTP request.
         :tyep params: dict
         '''
-
-        req = requests.Request(url=url, method=method.upper(), params=params, headers=self._session.headers)
+        req = requests.Request(url=url, method=method.upper(), params=params, data=data,
+                               headers=headers)
         preq = self._session.prepare_request(req)
         resp = self._session.send(preq)
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError:
+            return resp.content
+
+    def _get_subs(self, data):
+        ''' Create subscriptions based on API response data
+        :param data: check API response data
+        '''
+        _subs = []
+        if 'subscriptions' in data and data['subscriptions']:
+            _subs = [SeyrenSubscription(sub_data) for sub_data in data['subscriptions']]
+        return _subs
 
     def get_metric_count(self, path):
         ''' Get the number of metrics that match the given path
@@ -264,14 +275,36 @@ class SeyrenClient(object):
         checks = []
         checks_data = self._api_call('GET', self._url + '/api/checks', params=urlencode(params))
         for check_data in checks_data['values']:
-            subscriptions = [SeyrenSubscription(sub_data) for sub_data in check_data['subscriptions'] if 'subscriptions' in check_data]
+            subscriptions = self._get_subs(check_data)
             del check_data['subscriptions']
-            checks.append(SeyrenCheck(check_data))
+            checks.append(SeyrenCheck(check_data, subscriptions))
         return checks
 
     def get_check(self, checkId):
-        pass
+        ''' Gets a check given its id
+        :param checkId: Seyren ID
+        '''
+        try:
+            check_data = self._api_call('GET', self._url + '/api/checks/{}'.format(checkId))
+        except requests.HTTPError, _exp:
+            print 'Check {} {}'.format(checkId, _exp.response.reason)
+            return None
+        subscriptions = self._get_subs(check_data)
+        del check_data['subscriptions']
+        return SeyrenCheck(check_data, subscriptions)
 
+    def create_check(self, check):
+        ''' Send POST to /api/checks with new check info.
+        It will also verify the check already exists in order
+        to not create duplicates (checkId required)
+        :params check: SeyrenCheck object
+        '''
+        try:
+            _payload = json.dumps(check.post_data())
+            headers = {'content-type': 'application/json'}
+            self._api_call('POST', self._url + '/api/checks', data=_payload, headers=headers)
+        except requests.HTTPError, _exp:
+            print 'Error creating check {}: {}'.format(check.name, _exp.response.reason)
 
     def get_chart_for_target(self, target):
         pass
